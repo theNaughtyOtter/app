@@ -72,19 +72,49 @@
 
             .track-list {
                 background-color: #303030;
+                position: relative;
             }
 
             .track-list[view=search] festify-track:first-of-type {
                 padding-top: 16px;
+                z-index: 1;
             }
 
             .track-list festify-track[playing] {
                 background-color: #282828;
                 padding: 13px 16px;
+
+                transform: translateX(0px); /* Dirty hack */
             }
 
             .track-list festify-track[playing] + festify-track {
                 padding-top: 13px;
+            }
+
+            #skipBackground {
+                position: absolute;
+                right: 0;
+                width: 100%;
+
+                display: flex;
+                align-items: flex-end;
+                flex-direction: column;
+                justify-content: center;
+
+                height: 80px;
+                pointer-events: none;
+                transition: background-color 0.25s;
+                z-index: 0;
+            }
+
+            #skipBackground.active {
+                background-color: var(--primary-color);
+            }
+
+            #skipBackground p {
+                line-height: 16px;
+                margin: 0 32px 0 0;
+                text-align: right;
             }
 
             festify-track[hidden] {
@@ -130,6 +160,9 @@
                             attr-for-selected="view"
                             role="main">
                     <div class="track-list" view="queue">
+                        <div id="skipBackground" style$="display: [[_getDisplaySkipIndicator(tracks.length)]]">
+                            <p id="skipIndicator">Skip</p>
+                        </div>
                         <template is="dom-repeat" items="[[tracks]]">
                             <festify-track metadata="[[meta]]"
                                            state="[[state]]"
@@ -152,6 +185,8 @@
         </app-drawer-layout>
     </template>
     <script>
+        const SKIP_TRACK_THRESHOLD = -94.5;
+
         Polymer({
             is: 'view-party',
 
@@ -162,8 +197,28 @@
                     type: Object,
                     value: () => ({})
                 },
+                page: {
+                    type: String
+                },
                 searchQuery: {
                     type: String
+                },
+                searchResults: {
+                    type: Array
+                },
+                tracks: {
+                    type: Array
+                },
+                userVotes: {
+                    type: Object
+                },
+                _currentTrack: {
+                    type: HTMLElement,
+                    observer: '_currentTrackChanged'
+                },
+                _skipOffset: {
+                    type: Number,
+                    value: 0
                 }
             },
 
@@ -176,8 +231,42 @@
                 'track-toggleVote': '_toggleVote'
             },
 
+            observers: [
+                '_tracksChanged(tracks.*)'
+            ],
+
+            _translateXTo: function (element, offsetX, durationMs) {
+                if (!element || !element.style) {
+                    return;
+                }
+
+                element.style.transition = 'transform ' + durationMs + 'ms';
+                element.style.transform = 'translateX(' + offsetX + 'px)';
+            },
+
+            /*
+             * Observers and UI getters
+             */
+
+            _currentTrackChanged: function (newTrack, oldTrack) {
+                if (!this.state.isOwner) {
+                    return;
+                }
+
+                if (oldTrack) {
+                    this.unlisten(oldTrack, 'track', '_track');
+                }
+                if (newTrack) {
+                    this.listen(newTrack, 'track', '_track');
+                }
+            },
+
             _getCurrentView: function (q) {
                 return q ? 'search' : 'queue';
+            },
+
+            _getDisplaySkipIndicator: function (tracksLength) {
+                return this.state.isOwner && tracksLength > 0 ? 'flex' : 'none';
             },
 
             _getTrackDuration: function (tChange, metaChange) {
@@ -188,16 +277,67 @@
                     0;
             },
 
+            _tracksChanged: function () {
+                setTimeout(() => {
+                    const el = this.$$('festify-track[playing]');
+                    this._translateXTo(el, 0, 0);
+                    this.set('_currentTrack', el);
+                });
+            },
+
+            /*
+             * Event Handlers
+             */
+
             _playerEvent: function (ev) {
                 this.fire('toast', { text: ev.detail, duration: 5000 });
             },
 
-            _togglePlay: function(ev) {
+            _togglePlay: function() {
                 this.$.playerProvider.togglePlay();
             },
 
             _toggleVote: function (ev) {
                 this.$.voteProvider.toggleVote(ev.detail.track);
+            },
+
+            _track: function (ev) {
+                const { ddx, state } = ev.detail;
+                const indicator = this.$.skipIndicator;
+                const t = this._currentTrack;
+
+                switch (state) {
+                    case 'track':
+                        if (isNaN(ddx)) {
+                            return;
+                        }
+
+                        this._skipOffset = Math.min(this._skipOffset + ddx, 0);
+
+                        const background = this.$.skipBackground;
+                        if (this._skipOffset <= SKIP_TRACK_THRESHOLD) {
+                            background.classList.add('active');
+                        } else {
+                            background.classList.remove('active');
+                        }
+
+                        this._translateXTo(t, this._skipOffset, 0);
+                        this._translateXTo(indicator, Math.min(this._skipOffset - SKIP_TRACK_THRESHOLD, 0), 0);
+                        break;
+                    case 'end':
+                        if (this._skipOffset <= SKIP_TRACK_THRESHOLD) {
+                            const offset = -t.getBoundingClientRect().width;
+                            this._translateXTo(t, offset, 300);
+                            this._translateXTo(indicator, offset - SKIP_TRACK_THRESHOLD, 300);
+
+                            setTimeout(() => this.$.playerProvider.skip(), 300);
+                        } else {
+                            this._translateXTo(t, 0, 500);
+                        }
+
+                        this._skipOffset = 0;
+                        break;
+                }
             }
         });
     </script>

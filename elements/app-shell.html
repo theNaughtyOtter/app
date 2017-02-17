@@ -1,7 +1,6 @@
 <link rel="import" href="../bower_components/polymer/polymer.html">
 <link rel="import" href="../bower_components/app-route/app-location.html">
 <link rel="import" href="../bower_components/app-route/app-route.html">
-<link rel="import" href="../bower_components/paper-spinner/paper-spinner-lite.html">
 <link rel="import" href="../bower_components/paper-toast/paper-toast.html">
 <link rel="import" href="../bower_components/polymerfire/firebase-app.html">
 <link rel="import" href="../bower_components/polymerfire/firebase-auth.html">
@@ -94,13 +93,9 @@
                 <view-party view="party" class="centered" route="{{subroute}}" state="{{state}}"></view-party>
             </iron-pages>
         </template>
-        <template is="dom-if" if="[[!state.auth.signedIn]]">
-            <paper-spinner active></paper-spinner>
-        </template>
 
         <paper-toast id="toast"></paper-toast>
     </template>
-
     <script>
         // Fix statusbar fuckups on iOS
         window.fixStatusBar = () => {};
@@ -141,15 +136,15 @@
             listeners: {
                 'host-createNewParty': '_createNewParty',
                 'join-openParty': '_openParty',
-                'toast': '_showToast',
-                'party-notfound': '_partyNotFound'
+                'party-notfound': '_partyNotFound',
+                'toast': '_showToast'
             },
 
             observers: [
-                '_partyRouteIdChanged(partyRouteData.partyId)',
-                '_routePageChanged(routeData.view)',
+                '_currentPartyIdChanged(state.partyId)',
                 '_loginStateChanged(state.auth.statusKnown, state.auth.signedIn)',
-                '_currentPartyIdChanged(state.partyId)'
+                '_partyRouteIdChanged(partyRouteData.partyId)',
+                '_routePageChanged(routeData.view)'
             ],
 
             ready: function() {
@@ -167,17 +162,15 @@
             },
 
             _loginStateChanged: function (statusKnown, signedIn) {
-                if (statusKnown) {
-                    if (!signedIn) {
-                        this.$.fbAuth.signInAnonymously()
-                            .catch(err => this.fire('toast', {
-                                text: "Could not authenticate with the Server.",
-                                details: err
-                            }));
-                    } else {
-                        console.debug("We're already logged in with", this.$.fbAuth.user.uid);
-                    }
+                if (!statusKnown || signedIn) {
+                    return;
                 }
+
+                return this.$.fbAuth.signInAnonymously()
+                    .catch(err => this.fire('toast', {
+                        text: "Could not authenticate with the Server. Please reload the site to try again.",
+                        details: err
+                    }));
             },
 
             _partyRouteIdChanged: function (partyId) {
@@ -198,17 +191,17 @@
 
             // Actions
 
+            _createNewParty: function () {
+                this.$.partyProvider.createNewParty();
+            },
+
             _openParty: function (ev) {
                 this.$.partyProvider.openParty(ev.detail.shortId)
                     .then(result => result || this.fire('toast', { text: "Party not found!" }));
             },
 
-            _createNewParty: function () {
-                this.$.partyProvider.createNewParty();
-            },
-
             _partyNotFound: function() {
-                if(this.currentView == 'party') {
+                if (this.currentView == 'party') {
                     this.fire('toast', { text: "Party not found!" });
                     this.set('route.path', '/');
                 }
@@ -216,6 +209,7 @@
 
             _showToast: function(ev) {
                 this.$.toast.show(ev.detail);
+                console.log("Toast:", ev.detail.text);
             }
         });
     </script>

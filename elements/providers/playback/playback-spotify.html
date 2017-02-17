@@ -1,5 +1,5 @@
 <link rel="import" href="../../../bower_components/polymer/polymer.html">
-<link rel="import" href="../../common/behavior-playback-provider.html">
+<link rel="import" href="../../behaviors/behavior-playback-provider.html">
 <link rel="import" href="../../utils/lodash.html">
 
 <dom-module id="playback-spotify">
@@ -25,10 +25,11 @@
                 }
 
                 return spotify.authenticate(this.config)
-                    .then(session => this.set('_session', session))
-                    .then(() => {
-                        this._session.addListener('playbackevent', this._onPlaybackEvent, this);
-                        this._session.addListener('playbackerror', this._onPlaybackError, this);
+                    .then(session => {
+                        session.addListener('playbackevent', this._onPlaybackEvent, this);
+                        session.addListener('playbackerror', this._onPlaybackError, this);
+
+                        this.set('_session', session);
                     });
             },
 
@@ -72,7 +73,11 @@
                     case 'TrackDelivered':
                         this.fire('player', { type: 'finished' }); break;
                     case 'LostPermission':
-                        this.fire('error', { type: 'permissionlost' }); break;
+                        this.fire('error', {
+                            type: 'permissionlost',
+                            msg: "Somebody else started using your Spotify account."
+                        });
+                        break;
                     default:
                         console.log(event);
                 }

@@ -1,41 +1,22 @@
 <link rel="import" href="../../bower_components/polymer/polymer.html">
 <link rel="import" href="../../bower_components/polymerfire/firebase-database-script.html">
-<link rel="import" href="../common/behavior-app-state.html">
-<link rel="import" href="../common/behavior-firebase-paths.html">
+<link rel="import" href="../behaviors/behavior-app-state.html">
+<link rel="import" href="../behaviors/behavior-firebase-paths.html">
+<link rel="import" href="../behaviors/behavior-tracks.html">
 <link rel="import" href="../utils/lodash.html">
-<link rel="import" href="provider-spotify.html">
 
 <dom-module id="provider-tracks">
-    <template>
-        <provider-spotify id="spotifyProvider"></provider-spotify>
-    </template>
     <script>
         Polymer({
             is: 'provider-tracks',
 
             behaviors: [
                 FestifyBehaviors.FirebasePathsBehavior,
-                FestifyBehaviors.StateBehavior
+                FestifyBehaviors.StateBehavior,
+                FestifyBehaviors.TracksBehavior
             ],
 
             properties: {
-                limit: {
-                    type: Number,
-                    value: 50
-                },
-                searchQuery: {
-                    type: String
-                },
-                searchResults: {
-                    type: Array,
-                    notify: true,
-                    value: () => []
-                },
-                tracks: {
-                    type: Array,
-                    notify: true,
-                    value: () => []
-                },
                 _fbQuery: {
                     type: firebase.database.Query,
                     computed: '_computeQuery(state.partyId, limit)',
@@ -44,7 +25,6 @@
             },
 
             observers: [
-                '_searchQueryChanged(searchQuery, state.party.country, limit)',
                 '_tracksChanged(tracks.*)'
             ],
 
@@ -60,6 +40,17 @@
                 return query.orderByChild('order');
             },
 
+            _fbValue: function(snap) {
+                const data = _.values(snap.val());
+
+                if (data.length > 0) {
+                    data.sort((a, b) => a.order - b.order);
+                }
+
+                this.set('tracks', []);
+                this.push('tracks', ...data);
+            },
+
             _queryChanged: function(query, oldQuery) {
                 if (oldQuery) {
                     oldQuery.off('value');
@@ -70,45 +61,6 @@
                 if (query) {
                     query.on('value', this._fbValue.bind(this));
                 }
-            },
-
-            _fbValue: function(snap) {
-                const data = _.values(snap.val());
-
-                if (data.length > 0) {
-                    data.sort((a, b) => a.order - b.order);
-                }
-
-                if (!this.tracks) {
-                    this.set('tracks', []);
-                }
-                this.splice('tracks', 0, this.tracks.length, ...data);
-            },
-
-            _searchQueryChanged: function (query, market, limit) {
-                this.debounce('queryChanged', function () {
-                    this.set('searchResults', []);
-
-                    if (!query || query.length < 1) {
-                        return;
-                    }
-
-                    [ // Enter the other providers here
-                        this.$.spotifyProvider
-                    ].map(provider => {
-                        provider.search(query, market, limit)
-                            .then(results => results.map(track => {
-                                track.isFromSearch = true;
-                                return track;
-                            }))
-                            .then(results => this.push('searchResults', ...results))
-                            .catch(function (err) {
-                                if (err.message == "Request aborted.") {
-                                    return Promise.resolve();
-                                }
-                            });
-                    });
-                }, 200);
             },
 
             _tracksChanged: function (change) {
